@@ -1,0 +1,108 @@
+/* 🎨 Иллюстратор сцен NovelAI — Стили */
+.nsi-scope {
+    font-size: 0.92em;
+}
+.nsi-scope .nsi-set {
+    margin: 8px 0;
+    padding: 8px 10px;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255,255,255,0.18));
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--SmartThemeBlurTintColor, #1e1b26) 65%, transparent);
+}
+.nsi-scope .nsi-set > summary {
+    font-weight: 700;
+    cursor: pointer;
+    user-select: none;
+    padding: 2px 0;
+}
+.nsi-pop {
+    padding: 6px 4px;
+    text-align: left;
+}
+.nsi-pop h3 {
+    margin: 0 0 8px 0;
+}
+.nsi-pop-sub {
+    font-size: 0.88em;
+    opacity: 0.85;
+    margin-bottom: 10px;
+    line-height: 1.4;
+}
+.nsi-note {
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255,255,255,0.18));
+    background: color-mix(in srgb, var(--SmartThemeBlurTintColor, #1e1b26) 75%, transparent);
+    margin-bottom: 8px;
+}
+.nsi-btn-primary {
+    border-color: var(--SmartThemeQuoteColor, #8b78c4) !important;
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor, #8b78c4) 24%, transparent) !important;
+    font-weight: 700 !important;
+}
+.nsi-cast-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255,255,255,0.22));
+    cursor: pointer;
+    user-select: none;
+    font-size: 0.85em;
+    transition: all 0.15s ease;
+}
+.nsi-cast-chip.active {
+    border-color: var(--SmartThemeQuoteColor, #8b78c4);
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor, #8b78c4) 22%, transparent);
+    font-weight: 700;
+}
+
+/* Отдельный блок иллюстрации сцены строго под текстом поста (без перекрытия текста) */
+#chat .mes .mes_media_wrapper:has(.mes_img),
+#chat .mes .mes_media_wrapper:has(.nsi-inline-scene-bar) {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    clear: both !important;
+    float: none !important;
+    position: static !important;
+    margin: 12px 0 6px 0 !important;
+    padding: 0 !important;
+}
+#chat .mes .mes_img_container {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    clear: both !important;
+    float: none !important;
+    position: relative !important;
+    margin: 8px 0 4px 0 !important;
+}
+#chat .mes .nsi-inline-scene-bar {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    clear: both !important;
+    float: none !important;
+    position: static !important;
+    margin: 6px 0 4px 0 !important;
+    padding: 6px 10px !important;
+    border-radius: 10px !important;
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor, #8b78c4) 10%, transparent) !important;
+    border: 1px solid color-mix(in srgb, var(--SmartThemeQuoteColor, #8b78c4) 28%, transparent) !important;
+}
+#chat .mes .nsi-inline-scene-nav {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 8px !important;
+    flex-wrap: wrap !important;
+    width: 100% !important;
+}
