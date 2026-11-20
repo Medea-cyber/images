@@ -1,10 +1,11 @@
 {
-  "display_name": "🎨 Иллюстратор сцен NovelAI",
-  "loading_order": 55,
-  "requires": [],
-  "optional": [],
-  "js": "index.js",
-  "css": "style.css",
-  "author": "v13-wet",
-  "version": "1.0.0"
+    "display_name": "Картинки и комиксы (лайт)",
+    "loading_order": 102,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "Медея",
+    "version": "1.0.0-lite",
+    "homePage": ""
 }
