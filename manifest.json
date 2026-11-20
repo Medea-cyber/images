@@ -1,11 +1,11 @@
 {
-    "display_name": "Картинки и комиксы (лайт)",
+    "display_name": "Блокнот рассказчика (бета)",
     "loading_order": 102,
     "requires": [],
     "optional": [],
     "js": "index.js",
     "css": "style.css",
     "author": "Медея",
-    "version": "1.0.0-lite",
+    "version": "2.0.73-beta",
     "homePage": ""
 }

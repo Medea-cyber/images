@@ -218,7 +218,7 @@ const ACTION_INJECT_KEY = 'npc_notebook_actions';
 // Константы SillyTavern (extension_prompt_types / extension_prompt_roles)
 const POS_IN_CHAT = 1;
 
-const DEFAULT_THINK = `[OOC: Пауза в ролевой игре. Сейчас ты НЕ пишешь ответ персонажа. На минуту ты — автор этой истории и ведёшь свой рабочий блокнот. Перечитай чат целиком и пройди по всем разделам ниже.
+const DEFAULT_THINK = `[OOC: Пауза в ролевой. Ты — автор и обновляешь рабочий блокнот по последним событиям чата.
 
 {{direction}}
 
@@ -232,20 +232,11 @@ const DEFAULT_THINK = `[OOC: Пауза в ролевой игре. Сейчас
 
 {{wardrobe}}
 
-Задумки на будущее. Подумай как автор: что ты хочешь, чтобы произошло дальше? Как поведут себя NPC, что хочется выяснить у {{user}} через персонажей, что новое можно придумать про мир? Не каждая задумка должна быть проблемой или угрозой: тёплое, забавное, бытовое тоже двигает историю.
-
-Твои задумки сейчас:
+Задумки на будущее (привязывай к сюжетным событиям/датам, не больше 3 новых ADD; выполненное — DONE, неактуальное — DROP):
 {{notes}}
+Команды: ADD [план|вопрос|идея]: текст | DONE #номер | DROP #номер
 
-Команды для задумок:
-ADD [план]: что хочешь реализовать и к какому сюжетному моменту (например «когда {{user}} вернётся в город»)
-ADD [вопрос]: что хочешь выяснить или спросить
-ADD [идея]: новая придумка про NPC или мир
-DONE #номер — задумка уже реализовалась
-DROP #номер — задумка больше не подходит
-Привязывай задумки к сюжетным событиям или датам внутри истории, а не к счёту дней от текущего момента. Если в чате был таймскип, проверь каждую запись: что уже случилось бы за кадром — DONE или перепиши как последствие; что потеряло смысл — DROP. Не больше трёх новых ADD.
-
-Ответь ТОЛЬКО командами, каждая с новой строки, без пояснений и без текста роли. Пройди все разделы: если в разделе нечего добавить — пропусти его. Если нечего ни в одном — ответь одним словом: NONE]`;
+Ответь ТОЛЬКО командами с новой строки. Если по разделу нечего менять — пропусти; если вообще нечего — ответь: НИЧЕГО.]`;
 
 const INJECT_FF_KEY = 'npc_notebook_ff';
 const FF_MARKER = '[Перемотка:';
@@ -1464,7 +1455,8 @@ function store() {
             item.id = st.wardrobe.nextItemId++;
         }
     });
-    if (st.direction.autoBoxItems === undefined) st.direction.autoBoxItems = true;
+    if (st.direction.autoBoxItems === undefined) st.direction.autoBoxItems = false;
+    if (st.direction.notes === undefined) st.direction.notes = false;
     if (st.worldProfile === undefined) st.worldProfile = null;
     if (!st.wallet || typeof st.wallet !== 'object') {
         st.wallet = { balance: 1200, currency: '£' };
@@ -2138,16 +2130,22 @@ function buildWorldProfileInjection(st) {
         const trStr = st.trends.map(t => `«${t.title}» [${t.category}] (${t.desc})`).join('; ');
         parts.push(`— 🔥 Сейчас в моде и трендах города: ${trStr}. ВАЖНО — БЕЗ ПОЗИТИВНОГО БИАСА ПО ОТНОШЕНИЯМ: отношение любого персонажа к тренду зависит ТОЛЬКО от его личного характера, вкуса, скептицизма, прагматичности или скрытых слабостей, а НЕ от того, друг он или недруг! Близкая подруга или фаворит вполне могут посмеяться над модным хайпом и счесть его нелепой тратой денег, а хмурый скептик, соперник или строгий персонаж может неожиданно оказаться тайным поклонником этой новинки.`);
     }
+    if (!parts.length) return '';
+    return `[Профиль мира, окружения и персонажа (${user}) — канон истории:\n` + parts.join('\n') + ']';
+}
+
+function buildEphemeralWorldEventsInjection(st) {
+    if (!st) return '';
+    const parts = [];
     const recentStory = (st.neighborStories || []).slice(-1)[0];
     if (recentStory && (ctx().chat?.length ?? 0) - (recentStory.at || 0) <= 4) {
-        parts.push(`— 🏘 Недавняя новость в окружении NPC («соседские истории»): ${recentStory.text}.`);
+        parts.push(`[🏘 Недавняя новость в окружении NPC: ${recentStory.text}.]`);
     }
     const activeDreams = (st.dreams || []).filter(d => d.active && (ctx().chat?.length ?? 0) - (d.at || 0) <= 3);
     if (activeDreams.length) {
-        parts.push(`— 🌙 Недавний сон/кошмар (может повлиять на утреннее настроение или всплыть в разговоре один раз): ${activeDreams.map(d => `${d.who} (${d.kind === 'nightmare' ? 'кошмар' : 'сон'}): ${d.text}`).join('; ')}.`);
+        parts.push(`[🌙 Недавний сон/кошмар (может всплыть один раз): ${activeDreams.map(d => `${d.who} (${d.kind === 'nightmare' ? 'кошмар' : 'сон'}): ${d.text}`).join('; ')}.]`);
     }
-    if (!parts.length) return '';
-    return `[Профиль мира, окружения и персонажа (${user}) — канон истории:\n` + parts.join('\n') + ']';
+    return parts.join('\n');
 }
 
 function buildLivingWorldInjection(st, includeWorldProfile = true) {
@@ -2188,13 +2186,9 @@ function buildActionPromptsInjection() {
 
 function updateInjection() {
     const c = ctx();
-    // Лайт-версия «только картинки и комиксы»: 0 токенов в инъекцию чата!
-    c.setExtensionPrompt(INJECT_KEY, '', POS_IN_CHAT, 0);
-    c.setExtensionPrompt(INJECT_STATIC_KEY, '', POS_IN_CHAT, 0);
-    c.setExtensionPrompt(ACTION_INJECT_KEY, '', POS_IN_CHAT, 0);
-    return;
     const s = settings();
     const st = store();
+    const showNotes = st?.direction?.notes === true && st.notes.length;
     const showIntrigues = st?.direction?.intrigues && st.intrigues.length;
     const showNpcs = st?.direction?.npcs && (st.npcs.length || st.mainCharCard);
     const showRels = st?.direction?.npcs && (st.relationships || []).length;
@@ -2209,7 +2203,7 @@ ${st.storySummary.trim()}]`
     const wardBlock = st ? [wardrobeInjection(st), gachaInjection(st)].filter(Boolean).join('\n\n') : '';
     const autoActionsEveryTurn = !!(s.actionPrompts && st && !s.actionPromptsOnClickOnly);
     const actionBlock = autoActionsEveryTurn ? buildActionPromptsInjection() : '';
-    if (!s.enabled || !st || (!st.notes.length && !showIntrigues && !showNpcs && !showRels && !showArcs && !timeBlock && !livingBlock && !linesBlock && !wardBlock && !actionBlock && !summaryBlock)) {
+    if (!s.enabled || !st || (!showNotes && !showIntrigues && !showNpcs && !showRels && !showArcs && !timeBlock && !livingBlock && !linesBlock && !wardBlock && !actionBlock && !summaryBlock)) {
         c.setExtensionPrompt(INJECT_KEY, '', POS_IN_CHAT, 0);
         c.setExtensionPrompt(INJECT_STATIC_KEY, '', POS_IN_CHAT, 0);
         c.setExtensionPrompt(ACTION_INJECT_KEY, '', POS_IN_CHAT, 0);
@@ -2247,7 +2241,7 @@ ${st.storySummary.trim()}]`
             Number(s.role) || 0,
         );
 
-        const dynamicLiving = buildLivingWorldInjection(st, false);
+        const dynamicLiving = [buildLivingWorldInjection(st, false), buildEphemeralWorldEventsInjection(st)].filter(Boolean).join('\n\n');
         const dynamicWard = [wardrobeInjection(st, 'dynamic'), gachaInjection(st, 'dynamic')].filter(Boolean).join('\n\n');
         const dynamicTime = st.direction.time ? [buildTimeInjection(st, 'dynamic'), s.events ? buildHolidayInjection(st) : ''].filter(Boolean).join('\n\n') : '';
         const dynamicBlocks = [];
@@ -2258,7 +2252,7 @@ ${st.storySummary.trim()}]`
             const activeNpcsStr = formatNpcs(st.npcs, false, st, 'active');
             if (activeNpcsStr) dynamicBlocks.push(NPC_INJECT_HEADER + '\n' + activeNpcsStr);
         }
-        if (st.notes.length) dynamicBlocks.push(fillTemplate(s.injectPrompt, st.notes));
+        if (showNotes) dynamicBlocks.push(fillTemplate(s.injectPrompt, st.notes));
 
         c.setExtensionPrompt(
             INJECT_KEY,
@@ -2273,13 +2267,15 @@ ${st.storySummary.trim()}]`
         const blocks = [];
         if (summaryBlock) blocks.push(summaryBlock);
         if (timeBlock) blocks.push(timeBlock);
+        const ephemNonSaver = buildEphemeralWorldEventsInjection(st);
         if (livingBlock) blocks.push(livingBlock);
+        if (ephemNonSaver) blocks.push(ephemNonSaver);
         if (wardBlock) blocks.push(wardBlock);
         if (linesBlock) blocks.push(linesBlock);
         if (showNpcs) blocks.push(NPC_INJECT_HEADER + '\n' + formatNpcs(st.npcs, false, st));
         if (showRels) blocks.push(REL_INJECT_HEADER + '\n' + formatRelationships(st));
         if (showArcs) blocks.push(ARC_INJECT_HEADER + '\n' + formatArcs(st));
-        if (st.notes.length) blocks.push(fillTemplate(s.injectPrompt, st.notes));
+        if (showNotes) blocks.push(fillTemplate(s.injectPrompt, st.notes));
         if (showIntrigues) blocks.push(INTRIGUE_INJECT_HEADER + '\n' + formatIntrigues(st.intrigues));
         c.setExtensionPrompt(
             INJECT_KEY,
@@ -2588,7 +2584,7 @@ function fixOwnPromptRole(data) {
     if (!data || data.dryRun || !Array.isArray(data.chat)) return;
     // 🧹 Экономия токенов без потери смысла: для старых постов ролевой (старше последних 5 реплик)
     // очищаем HTML/CSS-обёртки (Двач/Телеграм/style-атрибуты) и скрытые <!--...--> метки только в исходящем запросе к ИИ (в чате на экране всё остаётся красивым!)
-    if (false && !ownRequest && settings().enabled && settings().tokenSaverMode !== false) {
+    if (!ownRequest && settings().enabled && settings().tokenSaverMode !== false) {
         const msgsAll = data.chat;
         const chatIndices = [];
         for (let idx = 0; idx < msgsAll.length; idx++) {
@@ -2840,7 +2836,7 @@ function parseAndApply(raw) {
 
         const mi = line.match(/^ITEM\s*(?:\[([^\]]{1,30})\])?\s*[:：—–-]\s*(.+)$/i);
         if (mi) {
-            if (st.wardrobe && Array.isArray(st.wardrobe.box) && st.direction?.autoBoxItems !== false) {
+            if (st.wardrobe && Array.isArray(st.wardrobe.box) && st.direction?.autoBoxItems === true) {
                 const rawBody = mi[2].trim().replace(/\]$/, '');
                 let t = '', desc = '', en = '', origin = '';
                 if (rawBody.includes('|')) {
@@ -3465,8 +3461,11 @@ async function think(manual = false) {
     ctx().setExtensionPrompt(ACTION_INJECT_KEY, '', POS_IN_CHAT, 0);
 
     try {
-        const tpl = ensureSections(s.thinkPrompt);
-        const raw = await quietGenerate(fillTemplate(tpl, st.notes, buildDirection(st), buildIntrigueSection(st), buildNpcSection(st), buildArcSection(st), buildTimeSectionFull(st), [buildWardrobeSection(st), buildMapSection(st)].filter(Boolean).join('\n')));
+        let tpl = ensureSections(s.thinkPrompt);
+        if (st.direction?.notes !== true) {
+            tpl = tpl.replace(/Задумки на будущее[\s\S]*?(?=Ответь ТОЛЬКО командами)/, '');
+        }
+        const raw = await quietGenerate(fillTemplate(tpl, st.direction?.notes === true ? st.notes : [], buildDirection(st), buildIntrigueSection(st), buildNpcSection(st), buildArcSection(st), buildTimeSectionFull(st), [buildWardrobeSection(st), buildMapSection(st)].filter(Boolean).join('\n')));
         if (ctx().chatId !== chatIdAtStart) return; // чат сменили, пока модель думала
         st.lastRaw = String(raw ?? '');
         const res = parseAndApply(raw);
@@ -4042,15 +4041,10 @@ OUTFITDONE — если сцена, ради которой выбирался �
             parts.push(`Гардероб. Если в ближайшей сцене или скоро по сюжету важен наряд {{user}} (свидание, вечеринка, праздник, ужин с родными, важная встреча, собеседование) и образ для неё ещё не выбирали — OUTFIT: повод (коротко, например «ужин у родителей на День благодарения»). Только когда наряд действительно имеет значение.${recent ? ` Недавно уже выбирали образы для: ${recent}.` : ''}`);
         }
     }
-    if ((st.direction?.wardrobe || st.direction?.gacha || accentsOn(st)) && st.direction?.autoBoxItems !== false) {
-        parts.push(`Шкатулка и памятные вещи {{user}}: ${w.box.length ? boxList(st, true) : '(пока пусто)'}.
-ВАЖНЫЕ ПРАВИЛА ШКАТУЛКИ:
-1) Записывай в ITEM ТОЛЬКО долговечные, значимые личные вещи, которые {{user}} приобрёл(а), нашёл(ла) или получил(а) в подарок И которые ОСТАЛИСЬ у {{user}} к текущему моменту: украшения, духи, аксессуары, книги, ключи, письма, артефакты, сувениры или предметы декора для дома.
-2) СТРОГО ЗАПРЕЩЕНО записывать в шкатулку любую еду, сладости (шоколадки, карамель, конфеты, выпечку), напитки, продукты, бытовой мусор или проходные мелочи!
-3) СТРОГО ЗАПРЕЩЕНО записывать вещи, которые {{user}} уже съел(а), выпил(а), выбросил(а), продал(а) или ОТДАЛ(А)/ПОДАРИЛ(А) другим персонажам или детям по ходу сцены!
-4) Если вещь из шкатулки была отдана кому-то, подарена, потрачена или потеряна в последних сообщениях — удали её строкой: DROP_ITEM: точное название предмета.
-Формат для новой долговечной вещи, оставшейся у {{user}}:
-ITEM [духи|аксессуар|украшение|находка]: название предмета | короткое описание на русском (1 предложение) | коротко по-английски как выглядит предмет (5–10 слов, без людей и рук) | откуда появилась вещь.`);
+    if ((st.direction?.wardrobe || st.direction?.gacha || accentsOn(st)) && st.direction?.autoBoxItems === true) {
+        parts.push(`Шкатулка {{user}}: ${w.box.length ? boxList(st, true) : '(пусто)'}.
+Правила: записывай в ITEM ТОЛЬКО долговечные значимые вещи, оставшиеся у {{user}} (украшения, духи, аксессуары, книги, ключи, письма, артефакты). ЗАПРЕЩЕНО писать еду/напитки/мусор и вещи, которые уже съели, отдали или потеряли (для них пиши DROP_ITEM: точное название).
+Формат: ITEM [духи|аксессуар|украшение|находка]: название | 1 фраза по-русски | 5–10 слов по-английски без людей | откуда вещь.`);
     }
     return parts.join('\n');
 }
@@ -14057,7 +14051,7 @@ function renderBox(st) {
     const det = $('<details open class="nnb-section"><summary></summary></details>');
     det.find('summary').text(`🎁 Личная шкатулка (${personalList.length})`);
     const autoBoxLabel = $('<label class="checkbox_label" style="margin:4px 0 6px; font-size:0.88em;"><input type="checkbox"> <span>Автоматически складывать полученные по сюжету долговечные вещи в шкатулку (без еды и сладостей)</span></label>');
-    autoBoxLabel.find('input').prop('checked', st.direction?.autoBoxItems !== false).on('change', async function () {
+    autoBoxLabel.find('input').prop('checked', st.direction?.autoBoxItems === true).on('change', async function () {
         st.direction.autoBoxItems = $(this).prop('checked');
         await commit();
     });
@@ -14643,8 +14637,14 @@ function clearFastForward() {
 }
 
 async function onMessageReceived() {
-    // Лайт-версия «только картинки и комиксы»: никаких фоновых тиков think() и тегов!
-    placeMesButtonsSoon();
+    // НЕ очищаем INJECT_FF_KEY сразу после первого ответа, чтобы при реролле (свайпе) этого поста сцена всё ещё шла по выбранному тренду/переходу!
+    if (ffPending) {
+        ffAnsweredOnce = true;
+        ffTargetMesId = Math.max(0, (ctx().chat?.length ?? 1) - 1);
+    }
+    setTimeout(showOutfitHint, 1500);
+    try { await processReplyTags(); } catch (e) { console.error('[npc_notebook] reply tags', e); }
+    onMessageReceivedThink();
 }
 
 function onMessageReceivedThink() {
@@ -17028,20 +17028,15 @@ const PANEL_HTML = `
 <div class="npc-notebook-settings">
   <div class="inline-drawer">
     <div class="inline-drawer-toggle inline-drawer-header">
-      <b>🎨 Картинки и комиксы</b>
+      <b>Блокнот рассказчика</b>
       <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
     </div>
     <div class="inline-drawer-content nnb-scope" id="nnb_panel">
-      <style>
-        #nnb_panel > label.checkbox_label:not(:first-of-type),
-        #nnb_panel > details.nnb-set:not(.nnb-comics-keep),
-        #nnb_open_world, #nnb_open_stats, #nnb_think_now, #nnb_book .nnb-book-think { display: none !important; }
-      </style>
       <label class="checkbox_label"><input type="checkbox" id="nnb_enabled"> Включено</label>
       <div class="nnb-buttons">
-        <div class="menu_button" id="nnb_open_book"><i class="fa-solid fa-images"></i> Альбом и теги героев</div>
-        <div class="menu_button" id="nnb_open_world" style="display:none;"><i class="fa-solid fa-earth-americas"></i></div>
-        <div class="menu_button" id="nnb_open_stats" style="display:none;"><i class="fa-solid fa-chart-column"></i></div>
+        <div class="menu_button" id="nnb_open_book"><i class="fa-solid fa-book-open"></i> Открыть блокнот</div>
+        <div class="menu_button" id="nnb_open_world"><i class="fa-solid fa-earth-americas"></i> Создать мир</div>
+        <div class="menu_button" id="nnb_open_stats"><i class="fa-solid fa-chart-column"></i> Статистика</div>
       </div>
       <div class="nnb-status"></div>
       <label class="checkbox_label"><input type="checkbox" id="nnb_toasts"> Уведомлять о новых записях</label>
@@ -17062,7 +17057,7 @@ const PANEL_HTML = `
         <div class="nnb-row" style="margin-top:4px;"><label for="nnb_text_ctx">Сообщений чата для контекста</label><input type="number" min="5" max="80" class="text_pole" id="nnb_text_ctx"></div>
       </details>
 
-      <details class="nnb-set nnb-comics-keep" open>
+      <details class="nnb-set">
         <summary>🎨 Картинки и NovelAI</summary>
         <label class="checkbox_label"><input type="checkbox" id="nnb_ward_img"> Рисовать образы в гардеробе</label>
         <select class="text_pole" id="nnb_img_src" title="Чем рисовать"></select>
@@ -17186,17 +17181,24 @@ const PANEL_HTML = `
 
 // Сам блокнот — отдельное окно во весь экран с вкладками
 const BOOK_TABS = [
+    { id: 'plot', icon: '🪪', title: 'Героиня' },
+    { id: 'heroes', icon: '👥', title: 'Герои', need: d => d.npcs || d.arcs },
+    { id: 'ward', icon: '👗', title: 'Гардероб', need: d => d.wardrobe },
+    { id: 'box', icon: '🎁', title: 'Шкатулка', need: d => d.gacha || (d.wardrobe && !!settings().accents) },
+    { id: 'map', icon: '🗺', title: 'Карта', need: d => d.map },
+    { id: 'time', icon: '📅', title: 'Время', need: d => d.time },
+    { id: 'ideas', icon: '🪶', title: 'Задумки' },
     { id: 'album', icon: '🖼', title: 'Альбом' },
-    { id: 'heroes', icon: '👥', title: 'Герои и теги' },
+    { id: 'cfg', icon: '⚙️', title: 'Настройки' },
 ];
 const BOOK_HTML = `
 <div id="nnb_book" class="nnb-scope nnb-book" style="display:none">
   <div class="nnb-book-head">
-    <b>🎨 Картинки и комиксы</b>
+    <b>Блокнот</b>
     <span class="nnb-status"></span>
-    <div class="menu_button nnb-book-think" id="nnb_turbo_now" style="display:none;"><i class="fa-solid fa-bolt"></i></div>
-    <div class="menu_button nnb-book-think" id="nnb_migrate_now" style="display:none;"><i class="fa-solid fa-suitcase-rolling"></i></div>
-    <div class="menu_button nnb-book-think" id="nnb_world_now" style="display:none;"><i class="fa-solid fa-earth-americas"></i></div>
+    <div class="menu_button nnb-book-think" id="nnb_turbo_now" title="⚡ Ускорение Таверны и Турбо-режим чата (сворачивание старых постов и картинок + сжатие PNG)"><i class="fa-solid fa-bolt"></i></div>
+      <div class="menu_button nnb-book-think" id="nnb_migrate_now" title="🚀 Переезд в новый чат (сохранить блокнот и сделать саммари истории)"><i class="fa-solid fa-suitcase-rolling"></i></div>
+    <div class="menu_button nnb-book-think" id="nnb_world_now" title="Создание мира и стартового набора"><i class="fa-solid fa-earth-americas"></i></div>
     <div class="menu_button nnb-book-think" id="nnb_think_now" title="Подумать сейчас"><i class="fa-solid fa-feather"></i></div>
     <div class="menu_button nnb-book-close" title="Закрыть"><i class="fa-solid fa-xmark"></i></div>
   </div>
@@ -17458,6 +17460,14 @@ function renderPanel(forceFull = false) {
         list.append(sumDet);
     }
 
+    const notesToggle = $(`<label class="checkbox_label" style="margin:4px 0 8px 0; font-size:0.86em;"><input type="checkbox"> 🪶 Вести и подсказывать задумки в чате (выключено по умолчанию для экономии токенов)</label>`);
+    notesToggle.find('input').prop('checked', st.direction?.notes === true).on('change', function () {
+        st.direction.notes = $(this).prop('checked');
+        save();
+        updateInjection();
+        toastr.info(st.direction.notes ? '🪶 Задумки включены в инъекцию и фон блокнота' : '💤 Задумки выключены (экономия токенов)', 'Блокнот рассказчика');
+    });
+    list.append(notesToggle);
     list.append($('<div class="nnb-subhead"></div>').text(`🪶 Задумки (${st.notes.length})`));
     if (!st.notes.length) {
         list.append('<div class="nnb-empty">Пока пусто. Модель сама начнёт записывать задумки, или нажми 🪶 вверху, чтобы подумать сейчас.</div>');
@@ -20551,7 +20561,26 @@ function placeMesButtons() {
                 mesEl.attr('data-nnb-ready', fastSig);
             }
         });
-        $('.nnb-mes-ward, .nnb-mes-gacha, .nnb-mes-map, .nnb-mes-customer, .nnb-mes-actions-btn').remove();
+        const lastMes = mes.last();
+        const lastButtonsSig = `${lastMes.attr('mesid')}|${!!shopModeOn(st)}|${!!mapOn(st)}|${!!gachaOn(st)}|${!!st.direction.wardrobe}|${!!settings().actionPrompts}`;
+        if (lastMes.length && (lastMes.attr('data-nnb-last-sig') !== lastButtonsSig || !lastMes.find('.nnb-mes-ward, .nnb-mes-gacha, .nnb-mes-map, .nnb-mes-customer, .nnb-mes-actions-btn').length)) {
+            $('.nnb-mes-ward, .nnb-mes-gacha, .nnb-mes-map, .nnb-mes-customer, .nnb-mes-actions-btn').remove();
+            const lastBox = lastMes.find('.mes_buttons').first();
+            if (lastBox.length && shopModeOn(st)) lastBox.prepend('<div class="mes_button nnb-mes-btn nnb-mes-customer fa-solid fa-bell-concierge interactable" title="Лавка: следующий покупатель" tabindex="0"></div>');
+            if (lastBox.length && mapOn(st)) lastBox.prepend('<div class="mes_button nnb-mes-btn nnb-mes-map fa-solid fa-map interactable" title="Карта: куда пойти" tabindex="0"></div>');
+            if (lastBox.length && gachaOn(st)) lastBox.prepend('<div class="mes_button nnb-mes-btn nnb-mes-gacha fa-solid fa-dice interactable" title="Находки: испытать удачу" tabindex="0"></div>');
+            if (lastBox.length && st.direction.wardrobe) lastBox.prepend('<div class="mes_button nnb-mes-btn nnb-mes-ward fa-solid fa-shirt interactable" title="Гардероб: подобрать образ" tabindex="0"></div>');
+            if (lastBox.length && settings().actionPrompts && !lastMes.hasClass('is_user')) {
+                const actBtn = $('<div class="mes_button nnb-mes-btn nnb-mes-actions-btn fa-solid fa-lightbulb interactable" title="💡 Подсказать варианты действий" tabindex="0"></div>');
+                actBtn.on('click', function(e) {
+                    e.stopPropagation();
+                    generateActionPromptsNow();
+                });
+                lastBox.prepend(actBtn);
+            }
+            lastMes.attr('data-nnb-last-sig', lastButtonsSig);
+        }
+        renderActionPrompts();
         applyChatTurboOptimization();
     } finally {
         isPlacingMesButtons = false;
@@ -20666,7 +20695,6 @@ function fmtCompactNum(n) {
 }
 
 function recordLiveUsageMessage(isUserMsg) {
-    return;
     try {
         const c = ctx();
         if (!Array.isArray(c.chat) || !c.chat.length) return;
@@ -20828,7 +20856,6 @@ function renderWelcomeUsageWidgetSoon() {
 }
 
 function mountWelcomeUsageWidget() {
-    return;
     const wp = $('.welcomePanel').first();
     if (!wp.length) return;
     let bar = wp.find('#nnb_welcome_stats_bar');
@@ -21057,12 +21084,39 @@ async function openUsageStatsModal() {
 function addMenuItems() {
     const menu = $('#extensionsMenu');
     if (!menu.length) return;
-    if (!$('#nnb_menu_scene').length) {
+    if (!$('#nnb_menu_ff').length) {
         const item = (id, icon, text, fn) => $(`<div id="${id}" class="list-group-item flex-container flexGap5 interactable" tabindex="0"><div class="fa-solid ${icon} extensionsMenuExtensionButton"></div><span></span></div>`)
             .find('span').text(text).end().on('click', fn);
+        menu.append(item('nnb_menu_book', 'fa-book-open', 'Блокнот рассказчика', () => openBook()));
+        menu.append(item('nnb_menu_stats', 'fa-chart-column', 'Статистика: боты, соо и токены', () => openUsageStatsModal()));
+        menu.append(item('nnb_menu_turbo', 'fa-bolt', 'Ускорение Таверны (Турбо-режим чата)', () => openChatTurboSettingsPopup()));
+        menu.append(item('nnb_menu_migrate', 'fa-suitcase-rolling', 'Переезд в новый чат (саммари + блокнот)', () => openChatMigrationModal()));
+        menu.append(item('nnb_menu_world', 'fa-earth-americas', 'Мир и карточка героини', () => openWorldOverviewOrCreator()));
+        menu.append(item('nnb_menu_home', 'fa-house-chimney', 'Мой дом: комната и предметы', () => openHomeModal()));
+        menu.append(item('nnb_menu_topics', 'fa-comments', 'Темы для разговора', () => openTopicsPopup()));
+        menu.append(item('nnb_menu_trends', 'fa-fire', 'Мода и тренды сезона', () => openTrendsModal()));
+        menu.append(item('nnb_menu_customer', 'fa-bell-concierge', 'Лавка: следующий покупатель', () => nextShopCustomer()));
+        menu.append(item('nnb_menu_ff', 'fa-forward', 'Дальше: следующее событие', fastForward));
+        menu.append(item('nnb_menu_nextday_divination', 'fa-wand-magic-sparkles', 'Новый день + гадание (Этель)', nextDayWithDivination));
+        menu.append(item('nnb_menu_offscreen', 'fa-clapperboard', 'За кадром: что у остальных героев', offscreenCutaway));
         menu.append(item('nnb_menu_scene', 'fa-image', 'Сцена / Комикс: нарисовать', () => showScenePopup(undefined, true)));
-        menu.append(item('nnb_menu_album', 'fa-images', 'Альбом картинок и комиксов', () => openBook('album')));
-        menu.append(item('nnb_menu_book', 'fa-users', 'Герои: внешность и теги', () => openBook('heroes')));
+        menu.append(item('nnb_menu_map', 'fa-map', 'Карта: куда пойти', () => showMapPopup()));
+        menu.append(item('nnb_menu_gacha', 'fa-dice', 'Находки: испытать удачу', () => startGacha()));
+        menu.append(item('nnb_menu_album', 'fa-images', 'Альбом', () => openBook('album')));
+        menu.append(item('nnb_menu_wardrobe', 'fa-shirt', 'Гардероб: подобрать образ', () => {
+            const st = store();
+            if (st && !st.direction.wardrobe) return toastr.info('Гардероб выключен в этом чате — включи его в блокноте, вкладка «Сюжет»', 'Блокнот рассказчика');
+            startWardrobe();
+        }));
+        menu.append(item('nnb_menu_actprompts', 'fa-lightbulb', 'Варианты хода: вкл / выкл', () => {
+            settings().actionPrompts = !settings().actionPrompts;
+            $('#nnb_action_prompts, #nnb_book_action_prompts').prop('checked', settings().actionPrompts);
+            saveSettings();
+            updateInjection();
+            placeMesButtons();
+            renderActionPrompts();
+            toastr.info(settings().actionPrompts ? '💡 Варианты хода включены!' : '🚫 Варианты хода выключены', 'Блокнот рассказчика');
+        }));
     }
     $('#nnb_menu_customer').toggle(!!shopModeOn(store()));
     cleanEnglishExtensionsMenu();
@@ -21087,7 +21141,7 @@ jQuery(async () => {
     }
     $('#extensions_settings2').append(PANEL_HTML);
     $('body').append(BOOK_HTML);
-    $('#nnb_open_book').on('click', () => { try { openBook('album'); } catch (e) { console.error('[npc_notebook] open', e); toastr.error(escapeHtml(e?.message || e), 'Блокнот не открылся', { escapeHtml: false }); } });
+    $('#nnb_open_book').on('click', () => { try { openBook(); } catch (e) { console.error('[npc_notebook] open', e); toastr.error(escapeHtml(e?.message || e), 'Блокнот не открылся', { escapeHtml: false }); } });
     $('#nnb_open_stats').on('click', () => { try { openUsageStatsModal(); } catch (e) { console.error('[npc_notebook] stats', e); } });
     bindBook();
     $(document).on('keydown', e => { if (e.key === 'Escape' && $('#nnb_book').is(':visible') && !$('dialog[open]').length) closeBook(); });
